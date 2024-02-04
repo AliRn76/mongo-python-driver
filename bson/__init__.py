@@ -102,6 +102,7 @@ from bson.codec_options import (
     CodecOptions,
     DatetimeConversion,
     _raw_document_class,
+    _pydantic_class,
 )
 from bson.datetime_ms import (
     EPOCH_AWARE,
@@ -602,6 +603,28 @@ def _elements_to_dict(
     return result
 
 
+def _elements_to_pydantic(
+    data: Any,
+    view: Any,
+    position: int,
+    obj_end: int,
+    opts: CodecOptions[Any],
+) -> Any:
+    """Decode a BSON document into pydantic BaseModel result."""
+    elements = {}
+    end = obj_end - 1
+    while position < end:
+        key, value, position = _element_to_dict(
+            data, view, position, obj_end, opts
+        )
+        elements[key] = value
+    if position != obj_end:
+        raise InvalidBSON("bad object or element length")
+
+    result = opts.document_class(**elements)
+    return result
+
+
 def _bson_to_dict(data: Any, opts: CodecOptions[_DocumentType]) -> _DocumentType:
     """Decode a BSON string to document_class."""
     data, view = get_data_and_view(data)
@@ -1086,6 +1109,7 @@ def _decode_all(data: _ReadableBuffer, opts: CodecOptions[_DocumentType]) -> lis
     position = 0
     end = data_len - 1
     use_raw = _raw_document_class(opts.document_class)
+    use_pydantic = _pydantic_class(opts.document_class)
     try:
         while position < end:
             obj_size = _UNPACK_INT_FROM(data, position)[0]
@@ -1096,6 +1120,8 @@ def _decode_all(data: _ReadableBuffer, opts: CodecOptions[_DocumentType]) -> lis
                 raise InvalidBSON("bad eoo")
             if use_raw:
                 docs.append(opts.document_class(data[position : obj_end + 1], opts))  # type: ignore
+            elif use_pydantic:
+                docs.append(_elements_to_pydantic(data, view, position + 4, obj_end, opts))
             else:
                 docs.append(_elements_to_dict(data, view, position + 4, obj_end, opts))
             position += obj_size

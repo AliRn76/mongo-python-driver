@@ -2815,6 +2815,37 @@ static PyObject* elements_to_dict(PyObject* self, const char* string,
     return result;
 }
 
+static PyObject* elements_to_pydantic(PyObject* self, const char* string,
+                                   unsigned max,
+                                   const codec_options_t* options) {
+    PyObject* result;
+    unsigned position = 0;
+    PyObject* elements = PyDict_New();
+
+    int raw_array = 0;
+    while (position < max) {
+        PyObject* name = NULL;
+        PyObject* value = NULL;
+        int new_position;
+
+        new_position = _element_to_dict(
+            self, string, position, max, options, raw_array, &name, &value);
+        if (new_position < 0) {
+            Py_DECREF(options->document_class);
+            return NULL;
+        } else {
+            position = (unsigned)new_position;
+        }
+
+        PyObject_SetItem(elements, name, value);
+        Py_DECREF(name);
+        Py_DECREF(value);
+    }
+
+    result = PyObject_CallObject(options->document_class, NULL, elements);
+    return result;
+}
+
 static int _get_buffer(PyObject *exporter, Py_buffer *view) {
     if (PyObject_GetBuffer(exporter, view, PyBUF_SIMPLE) == -1) {
         return 0;
@@ -2913,7 +2944,7 @@ static PyObject* _cbson_decode_all(PyObject* self, PyObject* args) {
     Py_ssize_t total_size;
     const char* string;
     PyObject* bson;
-    PyObject* dict;
+    PyObject* obj;
     PyObject* result = NULL;
     codec_options_t options;
     PyObject* options_obj = NULL;
@@ -2979,17 +3010,21 @@ static PyObject* _cbson_decode_all(PyObject* self, PyObject* args) {
             goto fail;
         }
 
-        dict = elements_to_dict(self, string, (unsigned)size, &options);
-        if (!dict) {
+        if PyObject_HasAttr(options->document_class, '__pydantic_complete__'){
+            obj = elements_to_pydantic(self, string, (unsigned)size, &options);
+        } else {
+            obj = elements_to_dict(self, string, (unsigned)size, &options);
+        }
+        if (!obj) {
             Py_DECREF(result);
             goto fail;
         }
-        if (PyList_Append(result, dict) < 0) {
-            Py_DECREF(dict);
+        if (PyList_Append(result, obj) < 0) {
+            Py_DECREF(obj);
             Py_DECREF(result);
             goto fail;
         }
-        Py_DECREF(dict);
+        Py_DECREF(obj);
         string += size;
         total_size -= size;
     }

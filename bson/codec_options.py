@@ -50,6 +50,11 @@ def _raw_document_class(document_class: Any) -> bool:
     return marker == _RAW_BSON_DOCUMENT_MARKER
 
 
+def _pydantic_class(document_class: Any) -> bool:
+    """Determine if a document_class is a Pydantic class."""
+    return getattr(document_class, "__pydantic_complete__", False)
+
+
 class TypeEncoder(abc.ABC):
     """Base class for defining type codec classes which describe how a
     custom type can be transformed to one of the types BSON understands.
@@ -388,11 +393,12 @@ else:
             except TypeError:
                 if hasattr(doc_class, "__origin__"):
                     is_mapping = issubclass(doc_class.__origin__, _MutableMapping)
-            if not (is_mapping or _raw_document_class(doc_class)):
+            if not (is_mapping or _raw_document_class(doc_class) or _pydantic_class(doc_class)):
                 raise TypeError(
                     "document_class must be dict, bson.son.SON, "
-                    "bson.raw_bson.RawBSONDocument, or a "
-                    "subclass of collections.abc.MutableMapping"
+                    "bson.raw_bson.RawBSONDocument, "
+                    "subclass of collections.abc.MutableMapping, or a "
+                    "subclass of pydantic.BaseModel."
                 )
             if not isinstance(tz_aware, bool):
                 raise TypeError(f"tz_aware must be True or False, was: tz_aware={tz_aware}")
